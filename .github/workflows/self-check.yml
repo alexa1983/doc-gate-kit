@@ -28,3 +28,8 @@ jobs:
 
       - name: 本仓库自己过一遍闸门
         run: node run_docs_gate.mjs --root "$GITHUB_WORKSPACE"
+
+      # dg 是"新建项目"的唯一入口，它自己坏了比判据坏了更难发现
+      # （新项目第一次就是红的，人只会以为"这项目有问题"）。故必须一起验。
+      - name: dg 自检（新项目/老项目两条路，用临时仓库跑）
+        run: sh bin/dg self-test

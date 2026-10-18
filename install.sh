@@ -31,16 +31,18 @@ warn() { printf '⚠️  %s\n' "$*"; }
 fail() { printf '❌ %s\n' "$*" >&2; exit 2; }
 
 HOOK_ONLY=0
+NO_RUN=0
 DIRS_LIST=""
 for arg in "$@"; do
   case "$arg" in
     --hook-only) HOOK_ONLY=1 ;;
+    --no-run) NO_RUN=1 ;;
     -h|--help)
-      say "用法：sh install.sh [--hook-only] [扫描目录...]"
+      say "用法：sh install.sh [--hook-only] [--no-run] [扫描目录...]"
       exit 0
       ;;
     -*)
-      fail "不认识的参数：$arg（可用的只有 --hook-only、-h/--help）"
+      fail "不认识的参数：$arg（可用的只有 --hook-only、--no-run、-h/--help）"
       ;;
     *)
       DIRS_LIST="${DIRS_LIST}${DIRS_LIST:+
@@ -218,6 +220,11 @@ fi
 
 if [ "$HOOK_ONLY" = "1" ]; then
   say "只装了钩子（--hook-only），基线／workflow 一律没动。"
+  exit 0
+fi
+
+if [ "$NO_RUN" = "1" ]; then
+  say "已跳过空跑（--no-run）：调用方自己会跑闸门。"
   exit 0
 fi
 
