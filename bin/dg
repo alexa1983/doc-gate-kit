@@ -14,8 +14,23 @@
 # 退出码：0 成／1 检查发现比基线差／2 用法或环境不对、闸门跑不成。
 set -u
 
-SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
-KIT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+# 本脚本可能被三种方式调用：`sh <路径>/bin/dg`、直接执行、或经 PATH 里的软链敲 `dg`。
+# 第三种下 $0 只是个名字（甚至就是 `dg`），dirname 会算到 cwd；软链还会把套件根指到
+# `~/.local`。故先把"我到底在哪"解析清楚，再算套件根——2026-10-19 实测踩到。
+SELF_PATH=$0
+case "$SELF_PATH" in
+  */*) : ;;
+  *) SELF_PATH=$(command -v "$SELF_PATH" 2>/dev/null || printf '%s' "$SELF_PATH") ;;
+esac
+while [ -L "$SELF_PATH" ]; do
+  link=$(readlink "$SELF_PATH")
+  case "$link" in
+    /*) SELF_PATH=$link ;;
+    *) SELF_PATH=$(dirname "$SELF_PATH")/$link ;;
+  esac
+done
+SELF=$(cd "$(dirname "$SELF_PATH")" && pwd)/$(basename "$SELF_PATH")
+KIT_DIR=$(cd "$(dirname "$SELF_PATH")/.." && pwd)
 GATE="$KIT_DIR/run_docs_gate.mjs"
 INSTALL="$KIT_DIR/install.sh"
 
@@ -54,8 +69,9 @@ cmd_new() {
     esac
   done
 
-  # 防手滑：已有内容的目录一律不动——老项目该走 adopt（它不会替你落基线）
-  if [ -e "$target" ] && [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+  # 防手滑：已有内容的目录一律不动——老项目该走 adopt（它不会替你落基线）。
+  # `.DS_Store` 除外：Finder 建出来的"空"文件夹几乎都带它，不该因此被拒。
+  if [ -e "$target" ] && [ -n "$(ls -A "$target" 2>/dev/null | grep -v '^\.DS_Store$')" ]; then
     die "目录已存在且非空：$target
 老项目请用：dg adopt \"$target\"（只装，不落基线）"
   fi

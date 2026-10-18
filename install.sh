@@ -160,6 +160,7 @@ EOF
     {
       printf '\n# 文档闸门报告：可重跑的产物，不是事实源\n'
       printf '%s\n' "$IGN_PAT"
+      printf '.DS_Store\n'
     } >> "$GI" 2>/dev/null || warn "写不进 .gitignore（权限？），请手工加一行：$IGN_PAT"
     [ -f "$GI" ] && say "已把 $IGN_PAT 写进 .gitignore"
   fi
