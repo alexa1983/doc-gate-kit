@@ -1,0 +1,30 @@
+# 套件自己的 CI —— "吃自己的狗粮"。
+#
+# **为什么本仓库非要有这一条**：所有项目的判据都来自这里。**这里一改错，全部项目跟着一起错**，
+# 而且错的方式可能是"永远返回干净"——那种错不会有人来报。故每次 push 都跑：
+#   ① `--self-test`：塞坏样本，确认这把尺子**真的会红**；
+#   ② 拿本仓库自己的文档跑一遍闸门（比基线）。
+#
+# **不调用可复用的 docs-gate.yml**：那一条是给别的项目用的（它会从本仓库 checkout 套件，
+# 自己调自己会绕。这里直接跑本地脚本，语义更清楚）。
+name: 套件自查
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  self-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 尺子自检（塞坏样本，确认它真的会红）
+        run: node run_docs_gate.mjs --self-test
+
+      - name: 本仓库自己过一遍闸门
+        run: node run_docs_gate.mjs --root "$GITHUB_WORKSPACE"

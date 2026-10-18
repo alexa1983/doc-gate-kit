@@ -109,13 +109,13 @@ jobs:
   docs-gate:
     uses: $KIT_SLUG/.github/workflows/docs-gate.yml@main
 EOF
-  say "已写：.github/workflows/docs.yml（调用 $KIT_SLUG）"
+  say "已写：.github/workflows/docs.yml（调用 ${KIT_SLUG}）"
 fi
 
 # ---------------------------------------------------------------- ⑤ 薄钩子
 HOOKS_PATH=$(git config --get core.hooksPath 2>/dev/null || true)
 if [ -n "$HOOKS_PATH" ]; then
-  warn "本项目已设 core.hooksPath=$HOOKS_PATH，**不动你的钩子**。"
+  warn "本项目已设 core.hooksPath=${HOOKS_PATH}，**不动你的钩子**。"
   warn "若希望本机提交时也拦，请在这个钩子目录里加一段：sh \"$KIT_DIR/install.sh\" --hook-only 说明见 README。"
 else
   HOOK="$ROOT/.git/hooks/pre-commit"
@@ -125,7 +125,7 @@ else
     mkdir -p "$(dirname "$HOOK")"
     cat > "$HOOK" <<EOF
 #!/bin/sh
-# 由 doc-gate-kit 安装（$KIT_DIR）。判据在中央套件里，本文件是"薄"的：
+# 由 doc-gate-kit 安装（${KIT_DIR}）。判据在中央套件里，本文件是"薄"的：
 # 只负责把项目根传过去，并按 fail-open 规则处理"闸门自己坏了"。
 #
 # fail-open 的落点：退出码 2 = 闸门跑不成（配置缺/目录空/脚本异常）。
@@ -140,7 +140,7 @@ code=\$?
 exit \$code
 EOF
     chmod +x "$HOOK"
-    say "已装钩子：.git/hooks/pre-commit（指向 $KIT_DIR）"
+    say "已装钩子：.git/hooks/pre-commit（指向 ${KIT_DIR}）"
   fi
 fi
 say ""

@@ -8,7 +8,7 @@
  *
  * **判三条**：
  *   ① 严格 UTF-8 解码失败（非法字节序列）；
- *   ② 出现替换字符 `U+FFFD`（"�"——原文已经坏了的痕迹）；
+ *   ② 出现替换字符 U+FFFD（显示为问号方块——原文已经坏了的痕迹）；
  *   ③ 出现不该有的控制字符（保留 `\n` `\t` `\r`）。
  *
  * **不判什么**：不判"中文写得对"、不判风格、不判长短。
@@ -70,7 +70,7 @@ export function scanEncoding({ root, dirs, ignore = [] }) {
       continue;
     }
     if (text.includes('\uFFFD')) {
-      bad.push({ doc: rel, why: '含替换字符 U+FFFD（"�"——原文可能已被截断或错码）' });
+      bad.push({ doc: rel, why: '含替换字符 U+FFFD（显示为问号方块，原文可能已被截断或错码）' });
       continue;
     }
     const ctrl = text.match(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/);
