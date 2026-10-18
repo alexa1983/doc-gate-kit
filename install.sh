@@ -175,7 +175,11 @@ if [ -n "$HOOKS_PATH" ]; then
   esac
   say "本项目设了 core.hooksPath=$HOOKS_PATH，钩子装到那里（不碰 .git/hooks）。"
 else
-  HOOK_DIR=$(git rev-parse --git-path hooks 2>/dev/null) || HOOK_DIR="$ROOT/.git/hooks"
+  # **必须 cd 到仓库根再问**：在子目录里 `git rev-parse --git-path hooks` 返回的是
+  # `../.git/hooks`（相对当前目录），拿 ROOT 一拼就指到仓库外去了——2026-10-19 实测
+  # 在子目录跑 adopt，钩子被装到了 /private/tmp/.git/hooks。
+  HOOK_DIR=$(cd "$ROOT" && git rev-parse --git-path hooks 2>/dev/null) || HOOK_DIR=""
+  [ -n "$HOOK_DIR" ] || HOOK_DIR=".git/hooks"
   case "$HOOK_DIR" in
     /*) : ;;
     *) HOOK_DIR="$ROOT/$HOOK_DIR" ;;

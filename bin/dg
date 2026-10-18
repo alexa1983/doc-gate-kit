@@ -123,7 +123,28 @@ cmd_adopt() {
   [ -d "$target" ] || die "目录不存在：$target"
   ABS=$(cd "$target" && pwd) || die "进不去：$target"
   cd "$ABS" || die "进不去：$ABS"
-  git rev-parse --git-dir >/dev/null 2>&1 || die "$ABS 不是 git 仓库。新项目请用：dg new <目录>"
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    say "这个目录还不是 git 仓库 —— 先 git init（只建 .git，不动你的文件）。"
+    git init -q || die "git init 失败"
+  fi
+  ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || die "取不到仓库根。"
+  if [ "$ROOT" != "$ABS" ]; then
+    warn "当前目录是 $ROOT 的子目录；闸门装在**仓库根** $ROOT（钩子与 workflow 必须是仓库级的）。"
+  fi
+  # 已经有别的闸门在管这个仓库时，先说清楚再装，免得两套判据并存
+  if [ -f "$ROOT/03_项目工具/闸门基线.json" ]; then
+    other=$(node -e '
+      try {
+        const b = require(process.argv[1]);
+        const keys = Object.keys(b["条目"] ?? {}).filter((k) => k !== "死链" && k !== "编码");
+        process.stdout.write(keys.join("、"));
+      } catch { process.stdout.write(""); }
+    ' "$ROOT/03_项目工具/闸门基线.json" 2>/dev/null)
+    if [ -n "$other" ]; then
+      warn "这个仓库的基线里已经有别的判据：$other"
+      warn "本套件只判死链与编码；接入后两套闸门会并存，确认这是你要的再继续。"
+    fi
+  fi
 
   say ""
   say "=== 接入已有项目（只装，**不落基线**）==="
@@ -219,6 +240,29 @@ cmd_self_test() {
     ok "⑥ 不存在的目录退 2"
   else
     no "⑥ 不存在的目录退 2（实测 $got）"
+  fi
+
+  # ⑦ 在仓库子目录里 adopt：钩子必须落在仓库根
+  #（2026-10-19 实测曾在子目录里跑到仓库外，落到 /private/tmp/.git/hooks）
+  R="$T/大仓库"
+  mkdir -p "$R/子项目/docs"
+  printf '# 子项目\n' >"$R/子项目/README.md"
+  ( cd "$R" && git init -q )
+  ( cd "$R/子项目" && sh "$SELF" adopt . >/dev/null 2>&1 )
+  if [ -x "$R/.git/hooks/pre-commit" ] && [ -f "$R/03_项目工具/闸门基线.json" ]; then
+    ok "⑦ 子目录里 adopt：钩子与基线落在仓库根，不落到仓库外"
+  else
+    no "⑦ 子目录里 adopt：钩子与基线应落在仓库根"
+  fi
+
+  # ⑧ 有文档、还没有 .git 的目录：adopt 自己 git init 后装好
+  N="$T/无版本库"
+  mkdir -p "$N"
+  printf '# 已有文档\n\n- [漏](没有.md)\n' >"$N/README.md"
+  if sh "$SELF" adopt "$N" >/dev/null 2>&1 && [ -d "$N/.git" ] && [ -f "$N/03_项目工具/闸门基线.json" ]; then
+    ok "⑧ 未初始化的文档目录：adopt 自动 git init 并装好"
+  else
+    no "⑧ 未初始化的文档目录：adopt 应自动 git init 并装好"
   fi
 
   say ""
