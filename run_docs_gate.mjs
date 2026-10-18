@@ -159,9 +159,26 @@ if (has('self-test')) {
       const escaped = r.real.filter((x) => x.rel.startsWith('..'));
       const exempt = r.ignored.filter((x) => x.rel === '素材/本机素材.pdf');
       say(
-        r.gitAvailable && escaped.length === 1 && exempt.length === 1 && r.real.length === 1,
+        r.gitAvailable && escaped.length === 1 && exempt.length === 1 && r.real.length === 1
+          && r.unknown.length === 0,
         '⑤ 越界链接不毒化 .gitignore 豁免',
-        `硬死链 ${r.real.length}（应为 1）、豁免 ${r.ignored.length}（应为 1）、gitAvailable=${r.gitAvailable}`,
+        `硬死链 ${r.real.length}（应为 1）、豁免 ${r.ignored.length}（应为 1）、问不到 ${r.unknown.length}（应为 0）、gitAvailable=${r.gitAvailable}`,
+      );
+    }
+
+    // ⑤b 名字以两点开头的正常文件**不算越界**（2026-10-18 收窄 escapesRoot 后补）
+    {
+      const d = tmpRepo('docs-gate-dotdot-');
+      tempDirs.push(d);
+      put(d, '.gitignore', '..缓存/\n');
+      put(d, 'a.md', '# a\n\n[两点开头](..缓存/x.pdf) 与 [越界](../../外面.md)\n');
+      put(d, '..缓存/x.pdf', 'x');
+      const r = scanDeadLinks({ root: d, dirs: ['.'] });
+      say(
+        r.real.filter((x) => x.rel === '..缓存/x.pdf').length === 0
+          && r.real.filter((x) => x.rel.startsWith('..')).length === 1,
+        '⑤b 以两点开头的正常文件名不被误判为越界',
+        `硬死链 ${r.real.length}（应只剩真正的越界那条）`,
       );
     }
 
@@ -328,6 +345,12 @@ lines.push(`- 读到的 Markdown：**${dead.files}** 份；核对的相对链接
 lines.push(`- 站点绝对路径（\`/...\`、\`//...\`，不属仓库内路径）：**${dead.skipped}** 条（不判）`);
 lines.push(`- 目标被 \`.gitignore\` 忽略、按环境必然不计入：**${dead.ignored.length}** 条`);
 lines.push(`- 目标存在但被忽略（本机可点、干净检出必缺）：**${dead.presentIgnored.length}** 条`);
+if (dead.unknown.length) {
+  lines.push(`- ⚠️ 问不到 git（\`check-ignore\` 判不了）而按"没被忽略"保守处理的：**${dead.unknown.length}** 条`
+    + `（2026-10-18 起单列点名，不再静默）`);
+  for (const x of dead.unknown.slice(0, 20)) lines.push(`  - \`${x.doc}\` → \`${x.target}\``);
+  if (dead.unknown.length > 20) lines.push(`  - ……其余 ${dead.unknown.length - 20} 条见报告`);
+}
 lines.push(STAGED
   ? `- 编码检查覆盖的**暂存区**文本文件：**${enc.files}** 份`
   : `- 编码检查覆盖的文本文件：**${enc.files}** 份`);

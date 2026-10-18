@@ -102,10 +102,11 @@ export function maskCode(text) {
 
 /**
  * 查一批相对路径里哪些被 `.gitignore` 忽略。失败时**二分降级**：
- * 一半继续查、一半再分，直到单条——单条仍查不成的，按"没被忽略"处理（宁可多报）。
- * 返回 false 仅当 git 根本跑不起来（ENOENT 等），由调用方退回"全按真死链计"。
+ * 一半继续查、一半再分，直到单条——单条仍查不成的，记进 `unknown`（调用方按
+ * "没被忽略"保守处理，但报告里能点名，不再静默）。
+ * 返回 `'nogit'` 仅当 git 根本跑不起来（ENOENT 等），由调用方退回"全按真死链计"。
  */
-function readIgnored(root, batch, out, depth = 0) {
+function readIgnored(root, batch, out, unknown, depth = 0) {
   const res = spawnSync(
     'git',
     ['-c', 'core.quotePath=false', 'check-ignore', '--no-index', '-z', '--stdin'],
@@ -113,29 +114,50 @@ function readIgnored(root, batch, out, depth = 0) {
   );
   if (!res.error && (res.status === 0 || res.status === 1)) {
     for (const s of res.stdout.split('\0')) if (s) out.add(s);
-    return true;
+    return 'ok';
   }
-  if (res.error) return false; // git 不可用
-  if (batch.length === 1 || depth >= 12) return true; // 单条也查不成：按"没被忽略"算
+  if (res.error) return 'nogit'; // git 不可用
+  if (batch.length === 1 || depth >= 12) {
+    unknown.push(...batch); // 单条也查不成：按"没被忽略"算，但留痕
+    return 'ok';
+  }
   const mid = batch.length >> 1;
-  return readIgnored(root, batch.slice(0, mid), out, depth + 1)
-    && readIgnored(root, batch.slice(mid), out, depth + 1);
+  readIgnored(root, batch.slice(0, mid), out, unknown, depth + 1);
+  readIgnored(root, batch.slice(mid), out, unknown, depth + 1);
+  return 'ok';
+}
+
+/**
+ * 相对路径是否**逃出了仓库根**（`..`、`../x`、`..\x`）。
+ * 判据刻意取窄：`.gitignore` 只作用于仓库内路径，仓库外的**不可能是"被忽略"**；
+ * 但 `..foo.md` 这种"文件名以两点开头"的正常文件**不能被误判成越界**（2026-10-18 收窄）。
+ */
+export function escapesRoot(rel) {
+  return rel === '..' || /^\.\.[\\/]/.test(rel);
 }
 
 /**
  * 问 git：这些相对路径里哪些被 `.gitignore` 忽略。
- * 问不到（不在仓库里 / git 不可用）返回 null——调用方按"全算真死链"处理（宁可多报）。
+ * 返回 `{ ignored:Set, unknown:string[], gitAvailable:boolean }`——
+ * **判不了的路径不再被"整批静默算作没被忽略"**，而是单列到 `unknown`（调用方仍按
+ * "没被忽略"保守处理，但能把它报出来）。git 不可用时 `gitAvailable=false`、
+ * `unknown` 为全部待查路径。
  *
- * **越界路径（`..` 开头、绝对路径）在这之前就被剔除**：它们按定义不在仓库里，
+ * **越界路径（见 `escapesRoot`）在这之前就被剔除**：它们按定义不在仓库里，
  * 不可能被 `.gitignore` 忽略，留着只会让 git 整批报错（见文件头坑 ②）。
  */
 export function ignoredPathsAmong(root, relPaths) {
-  if (relPaths.length === 0) return new Set();
-  if (!existsSync(join(root, '.git'))) return null;
-  const querable = [...new Set(relPaths)].filter((p) => !p.startsWith('..') && !isAbsolute(p));
-  const out = new Set();
+  const out = { ignored: new Set(), unknown: [], gitAvailable: true };
+  const all = [...new Set(relPaths)];
+  if (all.length === 0) return out;
+  if (!existsSync(join(root, '.git'))) {
+    return { ignored: new Set(), unknown: all, gitAvailable: false };
+  }
+  const querable = all.filter((p) => !escapesRoot(p) && !isAbsolute(p));
   for (let i = 0; i < querable.length; i += CHUNK) {
-    if (!readIgnored(root, querable.slice(i, i + CHUNK), out)) return null;
+    const batch = querable.slice(i, i + CHUNK);
+    const res = readIgnored(root, batch, out.ignored, out.unknown);
+    if (res === 'nogit') return { ignored: out.ignored, unknown: [...all], gitAvailable: false };
   }
   return out;
 }
@@ -195,13 +217,18 @@ export function scanDeadLinks({ root, dirs, ignore = [] }) {
     }
   }
 
-  const ignored = ignoredPathsAmong(root, missing.map((x) => x.rel));
-  const real = ignored === null ? missing : missing.filter((x) => !ignored.has(x.rel));
-  const ignoredList = ignored === null ? [] : missing.filter((x) => ignored.has(x.rel));
+  const miss = ignoredPathsAmong(root, missing.map((x) => x.rel));
+  const real = missing.filter((x) => !miss.ignored.has(x.rel));
+  const ignoredList = missing.filter((x) => miss.ignored.has(x.rel));
 
   // "本机可点、干净检出必缺"：存在、但被忽略。只报告，不算缺陷（换环境必然缺）。
-  const pIgnored = ignoredPathsAmong(root, present.map((x) => x.rel));
-  const presentIgnored = pIgnored === null ? [] : present.filter((x) => pIgnored.has(x.rel));
+  // **越界但存在的目标同样算**：它压根不在任何一份检出里，与"被忽略"后果一样。
+  const pIgn = ignoredPathsAmong(root, present.map((x) => x.rel));
+  const presentIgnored = present.filter((x) => escapesRoot(x.rel) || pIgn.ignored.has(x.rel));
+
+  // 判不了的路径：仍按"没被忽略"保守计入 real，但单列出来供报告点名
+  const unknownSet = new Set([...miss.unknown, ...pIgn.unknown]);
+  const unknown = [...missing, ...present].filter((x) => unknownSet.has(x.rel));
 
   return {
     checked: checked.length,
@@ -209,7 +236,8 @@ export function scanDeadLinks({ root, dirs, ignore = [] }) {
     real,
     ignored: ignoredList,
     presentIgnored,
-    gitAvailable: ignored !== null,
+    unknown,
+    gitAvailable: miss.gitAvailable,
     files: uniqueDocs.length,
   };
 }
