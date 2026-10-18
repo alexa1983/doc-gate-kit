@@ -1,0 +1,15 @@
+# 把这一份抄到你新项目的 `.github/workflows/docs.yml`。
+#
+# 就这 5 行。判据、脚本、升级全在 doc-gate-kit 那个仓库里，
+# 你这边只需要一个"基线"（扫哪些目录、今天读数是几）和一个钩子。
+#
+# ⚠️ 把 <owner> 换成你的 GitHub 账号（如果套件不在同名账号下）。
+name: 文档层闸门
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  docs-gate:
+    uses: <owner>/doc-gate-kit/.github/workflows/docs-gate.yml@main

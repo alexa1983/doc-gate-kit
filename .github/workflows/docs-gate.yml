@@ -1,0 +1,57 @@
+# 可复用文档闸门（新项目只需 5 行就能调用本 workflow）。
+#
+# **为什么做成 reusable workflow 而不是让每个项目各拷一份检查脚本**：
+# 判据只有一份、升级只改这一处——新项目下次 push 自动跟上新判据。
+# 各拷一份的话，本机跑旧判据、CI 跑新判据，就会"本地绿、CI 红"，
+# 那比不装更坏（你会开始不信红灯）。
+#
+# **为什么要在 workflow 里再 checkout 一次本仓库**：reusable workflow 被调用时，
+# workspace 里是**调用方**的代码，本套件的脚本不在里面。故显式拉一份到 `.doc-gate-kit/`。
+#
+# **前提**：本仓库需对调用方可见。public 仓库直接可用；private 仓库要给调用方
+# 授予 Actions 读取权限，否则这一步会 404。
+name: 可复用文档层闸门
+
+on:
+  workflow_call:
+    inputs:
+      baseline:
+        description: 基线文件在调用方仓库里的相对路径
+        type: string
+        required: false
+        default: 03_项目工具/闸门基线.json
+      kit-ref:
+        description: 本套件的 git ref（默认随 main）
+        type: string
+        required: false
+        default: main
+
+jobs:
+  docs-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 取调用方仓库
+        uses: actions/checkout@v4
+
+      - name: 取本套件
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/doc-gate-kit
+          ref: ${{ inputs.kit-ref }}
+          path: .doc-gate-kit
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 先自检：确认这把尺子**真的会红**。不自检就等于没验过——
+      # 它只需要几毫秒，却能拦住"判据写错、永远返回干净"这类最坏情况。
+      - name: 尺子自检（塞坏样本看它红不红）
+        run: node .doc-gate-kit/run_docs_gate.mjs --self-test
+
+      - name: 跑闸门（比基线）
+        run: >
+          node .doc-gate-kit/run_docs_gate.mjs
+          --root "$GITHUB_WORKSPACE"
+          --baseline "$GITHUB_WORKSPACE/${{ inputs.baseline }}"
