@@ -1,9 +1,11 @@
 # 把这一份抄到你新项目的 `.github/workflows/docs.yml`。
 #
-# 就这 5 行。判据、脚本、升级全在 doc-gate-kit 那个仓库里，
-# 你这边只需要一个"基线"（扫哪些目录、今天读数是几）和一个钩子。
+# 判据、脚本、升级全在 doc-gate-kit 那个仓库里，
+# 你这边只需要一个"基线"（扫哪些目录/文件、今天读数是几）和一个钩子。
 #
-# ⚠️ 把 <owner> 换成你的 GitHub 账号（如果套件不在同名账号下）。
+# ⚠️ 把 <owner> 换成套件所在的 GitHub 账号。`kit-repository` 建议**显式写**：
+#    留空也能跑（默认按"你的账号 + doc-gate-kit"推断），但一旦套件 fork 过、
+#    改过名、或不在同一账号下，写死这一行才不会 404。
 name: 文档层闸门
 
 on:
@@ -13,3 +15,6 @@ on:
 jobs:
   docs-gate:
     uses: <owner>/doc-gate-kit/.github/workflows/docs-gate.yml@main
+    with:
+      kit-repository: <owner>/doc-gate-kit
+      # baseline: 03_项目工具/闸门基线.json   # 路径不是默认值时再写

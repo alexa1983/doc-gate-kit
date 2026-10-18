@@ -1,15 +1,18 @@
-# 可复用文档闸门（新项目只需 5 行就能调用本 workflow）。
+# 可复用文档闸门（新项目只需 4 行就能调用本 workflow）。
 #
 # **为什么做成 reusable workflow 而不是让每个项目各拷一份检查脚本**：
 # 判据只有一份、升级只改这一处——新项目下次 push 自动跟上新判据。
 # 各拷一份的话，本机跑旧判据、CI 跑新判据，就会"本地绿、CI 红"，
 # 那比不装更坏（你会开始不信红灯）。
 #
-# **为什么要在 workflow 里再 checkout 一次本仓库**：reusable workflow 被调用时，
-# workspace 里是**调用方**的代码，本套件的脚本不在里面。故显式拉一份到 `.doc-gate-kit/`。
+# **为什么套件要先检出、再搬到工作区之外**（2026-10-18 修）：
+# reusable workflow 被调用时，workspace 里是**调用方**的代码，本套件的脚本不在里面，
+# 故必须显式拉一份。**但它不能留在被扫描的目录树里**——调用方的 `扫描目录` 只要写了 `.`，
+# 套件自己的 README 就会被当成"被检项目的文档"来判，将来套件里加一份带相对链接的文档
+# 就会在别人项目里报假死链。故检出到 `.doc-gate-kit/` 后立刻 `mv` 到 `$RUNNER_TEMP`。
 #
-# **前提**：本仓库需对调用方可见。public 仓库直接可用；private 仓库要给调用方
-# 授予 Actions 读取权限，否则这一步会 404。
+# **前提**：本仓库需对调用方可见。public 仓库直接可用；private 仓库要
+# 在调用方设置里授予 Actions 读取权限，否则这一步会 404。
 name: 可复用文档层闸门
 
 on:
@@ -25,11 +28,18 @@ on:
         type: string
         required: false
         default: main
+      kit-repository:
+        description: 本套件所在仓库（owner/repo）。留空则取「调用方同一 owner 下的 doc-gate-kit」。
+        type: string
+        required: false
+        default: ''
 
 jobs:
   docs-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: 取调用方仓库
         uses: actions/checkout@v4
@@ -37,21 +47,26 @@ jobs:
       - name: 取本套件
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/doc-gate-kit
+          # 显式传 kit-repository 时用它：fork、改名、或套件不在同一账号下时都要靠这一条。
+          # 不传时按"调用方 owner + doc-gate-kit"推断，兼容绝大多数用法。
+          repository: ${{ inputs.kit-repository != '' && inputs.kit-repository || format('{0}/doc-gate-kit', github.repository_owner) }}
           ref: ${{ inputs.kit-ref }}
           path: .doc-gate-kit
+
+      - name: 把套件搬到工作区之外（不让它自己的文档进被检范围）
+        run: mv .doc-gate-kit "$RUNNER_TEMP/doc-gate-kit"
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       # 先自检：确认这把尺子**真的会红**。不自检就等于没验过——
-      # 它只需要几毫秒，却能拦住"判据写错、永远返回干净"这类最坏情况。
+      # 它只需要一两秒，却能拦住"判据写错、永远返回干净"这类最坏情况。
       - name: 尺子自检（塞坏样本看它红不红）
-        run: node .doc-gate-kit/run_docs_gate.mjs --self-test
+        run: node "$RUNNER_TEMP/doc-gate-kit/run_docs_gate.mjs" --self-test
 
       - name: 跑闸门（比基线）
         run: >
-          node .doc-gate-kit/run_docs_gate.mjs
+          node "$RUNNER_TEMP/doc-gate-kit/run_docs_gate.mjs"
           --root "$GITHUB_WORKSPACE"
           --baseline "$GITHUB_WORKSPACE/${{ inputs.baseline }}"
